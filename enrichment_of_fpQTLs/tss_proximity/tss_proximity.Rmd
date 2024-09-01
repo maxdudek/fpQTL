@@ -1,0 +1,269 @@
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(GenomicRanges)
+library(ggpubr)
+library("viridis")
+library(ggbeeswarm)
+ROOT_DIR <- "/mnt/isilon/sfgi/dudekm/"
+```
+
+```{r}
+FP_METHODS <- c(
+    "PRINT", "PRINT_no_gaussian"
+)
+
+FP_METHOD <- "PRINT_no_gaussian"
+```
+
+```{r}
+regression_results <- readRDS(paste0("../../regression/FP_methods/", FP_METHOD, "/regression_results/fp_score_covariates_genotype_regression.Rds"))
+
+Q_THRESHOLD <- 0.05
+
+regression_results %>%
+  mutate(fpQTL = ST_qval < Q_THRESHOLD) ->
+  regression_results
+```
+
+Load TSS ranges from RefSeq Curated
+```{r}
+refSeqCurated <- read.table(paste0(ROOT_DIR, "raw_data/genome/RefSeq/ncbiRefSeqCurated.txt"))
+
+colnames(refSeqCurated) <- c("bin", "name", "chrom", "strand", "txStart", "txEnd", "cdsStart", "cdsEnd", "exonCount", "exonStarts", "exonEnds", "score", "name2", "cdsStartStat", "cdsEndStat", "exonFrames")
+
+refSeqCurated %>%
+  mutate(
+    tx = ifelse(strand == "+", txStart, txEnd)
+  ) ->
+  refSeqCurated
+
+```
+
+```{r}
+variant.range <- GRanges(seqnames = regression_results$variant_chrom, 
+                         ranges = IRanges(start = regression_results$variant_pos, 
+                                          end = regression_results$variant_pos))
+
+tss.range <- GRanges(seqnames = refSeqCurated$chrom, 
+                     ranges = IRanges(start = refSeqCurated$tx, 
+                                      end = refSeqCurated$tx,
+                                      names = refSeqCurated$name2))
+```
+
+
+
+```{r}
+result <- distanceToNearest(variant.range, tss.range)
+nearest_index <- subjectHits(result)
+regression_results$nearest_tss <- refSeqCurated$name2[nearest_index]
+regression_results$distance_to_nearest_tss <- mcols(result)$distance
+regression_results$promoter <- regression_results$distance_to_nearest_tss <= 1000
+```
+
+```{r}
+regression_results$distance_to_nearest_tss %>% quantile(probs = seq(0, 1, by = .2))
+```
+
+```{r fig.width=4, fig.height=4}
+distance_summary <- regression_results %>%
+  mutate(distance_bin = cut(distance_to_nearest_tss, 
+                            breaks = c(0, 1000, 10000, 25000, 50000, 100000, Inf),
+                            ordered_result = TRUE, right = FALSE)) %>%
+  group_by(distance_bin) %>%
+  summarize(
+    n = n(),
+    n_fpQTLs = sum(fpQTL)
+  ) %>% 
+  rowwise() %>%
+  mutate(
+    prop_fpQTLs = n_fpQTLs / n,
+    prop_fpQTLs_95low = prop.test(n_fpQTLs, n)$conf.int[1],
+    prop_fpQTLs_95high = prop.test(n_fpQTLs, n)$conf.int[2]
+  )
+```
+
+# MANUSCRIPT - Figure 2B
+```{r fig.width=4, fig.height=4}
+distance_summary %>%
+  ggplot(aes(x = distance_bin)) +
+  geom_pointrange(aes(y = 100*prop_fpQTLs, 
+                      ymin = 100*prop_fpQTLs_95low, 
+                      ymax = 100*prop_fpQTLs_95high)) +
+  ylim(0, NA) +
+  ylab("% of variants that are fpQTLs") +
+  xlab("Distance to TSS") +
+  # scale_size_continuous(limits = c(0,NA), range = c(0.5,2), 
+  #                       name = "Number\nof SNPs\n(thousands)") +
+  scale_x_discrete(labels = c("<1 kb", "1-10 kb", "10-25 kb", 
+                              "25-50 kb", "50-100 kb", ">100 kb")) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1))
+ggsave("figures/tss_distance_vs_fpQTL_proportion.png", width = 4, height = 4, units = "in", dpi = 600)
+```
+
+
+
+
+```{r}
+regression_results %>%
+  arrange(fpQTL) %>%
+  ggplot(aes(x = distance_to_nearest_tss/1000, y = abs(beta), color = fpQTL)) +
+  geom_point(size = 1) +
+  xlim(0, 100) +
+  xlab("Distance to nearest TSS (kb)") +
+  ylab("Absolute effect size") +
+  scale_color_manual(values = c("black", "red")) + 
+  theme_classic()
+
+ggsave(paste0("figures/", FP_METHOD, "_tss_distance_vs_effect_size.png"),
+       width = 6, height = 4, units = "in")
+
+regression_results %>%
+  arrange(fpQTL) %>%
+  ggplot(aes(x = distance_to_nearest_tss/1000, y = -log10(pval), color = fpQTL)) +
+  geom_point(size = 1) +
+  xlim(0, 100) +
+  xlab("Distance to nearest TSS (kb)") +
+  ylab(bquote(-log[10](p))) +
+  scale_color_manual(values = c("black", "red")) + 
+  theme_classic() 
+
+ggsave(paste0("figures/", FP_METHOD, "_tss_distance_vs_significance.png"),
+       width = 6, height = 4, units = "in")
+```
+
+
+Are fpQTLs more likely than other variants to be within 1 kb of a TSS (in a promoter)?
+```{r}
+regression_results %>%
+  count(fpQTL, distance_to_nearest_tss <= 1000) %>%
+  pull(n) %>%
+  matrix(nrow = 2, dimnames = list(
+    c("TSS distal", "TSS proximal"),
+    c("non-fpQTL", "fpQTL")
+  )) ->
+  m
+
+m  %>% addmargins()
+t(apply(m  %>% addmargins() ,1, function(x) x/sum(x))) * 2 * 100
+apply(m  %>% addmargins() ,2, function(x) x/sum(x)) * 2 * 100
+fisher.test(m)
+
+```
+
+# MANUSCRIPT - Figure 2C
+Do fpQTLs in promoters have larger effect sizes than other fpQTLs?
+```{r fig.width=4, fig.height=4}
+regression_results %>%
+  filter(fpQTL) %>%
+  ggplot(aes(x = promoter, y = abs(beta))) +
+  geom_boxplot(aes(fill = promoter), outlier.shape = NA) +
+  geom_quasirandom(size = 1, width = 0.4) +
+  xlab("fpQTL type") +
+  scale_x_discrete(labels = c("distal (> 1 kb)", "promoter")) +
+  ylab("Absolute effect size") +
+  scale_fill_manual(guide = "none", values = c("#3b528b", "orange")) +
+  stat_compare_means(label.x = 1.5) +
+  theme_classic()
+ggsave("figures/promoter_vs_distal_effect_size.png", width = 4, height = 4, units = "in", dpi = 600)
+```
+
+```{r}
+effect_size.promoter <- regression_results %>% filter(fpQTL, promoter) %>% pull(beta) %>% abs()
+effect_size.distal <- regression_results %>% filter(fpQTL, !promoter) %>% pull(beta) %>% abs()
+wilcox.test(effect_size.promoter, effect_size.distal)
+```
+
+
+
+For fpQTLs, is there a relationship between effect size and distance?
+```{r}
+regression_results %>%
+  filter(fpQTL) %>%
+  ggplot(aes(x = distance_to_nearest_tss/1000, y = abs(beta))) +
+  geom_point() +
+  xlim(0, 100000/1000) +
+  stat_cor(method = "spearman", label.x.npc = "middle")+
+  xlab("Distance to nearest TSS (kb)") +
+  ylab("Absolute effect size") +
+  theme_classic()
+ggsave("figures/distance_vs_effect_size_fpQTLs.png", width = 5, height = 4, units = "in", dpi = 300)
+```
+
+# Version 2
+
+What if we redo this analysis, but only consider TSS of genes that are expressed in liver?
+```{r}
+liver_GTEx_median_tpm <- read.delim(paste0(ROOT_DIR, "raw_data/GTEx/GTEx_v8_liver_median_tpm.txt"))
+
+liver_GTEx_median_tpm %>%
+  filter(Liver > 0) %>%
+  pull(Description) %>%
+  toupper() ->
+  liver_expressed_genes
+```
+
+```{r}
+refSeqCurated %>%
+  mutate(name2 = toupper(name2)) %>%
+  filter(name2 %in% liver_expressed_genes) ->
+  refSeq_liver_expressed
+
+tss.range.liver_expressed <- 
+  GRanges(seqnames = refSeq_liver_expressed$chrom, 
+          ranges = IRanges(start = refSeq_liver_expressed$tx, 
+                           end = refSeq_liver_expressed$tx,
+                           names = refSeq_liver_expressed$name2))
+```
+
+```{r}
+result <- distanceToNearest(variant.range, tss.range.liver_expressed)
+nearest_index <- subjectHits(result)
+regression_results$nearest_tss_liver_expressed <- refSeq_liver_expressed$name2[nearest_index]
+regression_results$distance_to_nearest_tss_liver_expressed <- mcols(result)$distance
+```
+
+
+```{r}
+regression_results %>%
+  arrange(fpQTL) %>%
+  ggplot(aes(x = distance_to_nearest_tss_liver_expressed/1000, y = abs(beta), 
+             color = fpQTL)) +
+  geom_point(size = 1) +
+  xlim(0, 100) +
+  xlab("Distance to nearest TSS (kb)") +
+  ylab("Absolute effect size") +
+  scale_color_manual(values = c("black", "red")) + 
+  theme_classic()
+
+# ggsave(paste0("figures/", FP_METHOD, "_tss_distance_vs_effect_size.png"),
+#        width = 6, height = 4, units = "in")
+
+regression_results %>%
+  arrange(fpQTL) %>%
+  ggplot(aes(x = distance_to_nearest_tss_liver_expressed/1000, y = -log10(pval), 
+             color = fpQTL)) +
+  geom_point(size = 1) +
+  xlim(0, 100) +
+  xlab("Distance to nearest TSS (kb)") +
+  ylab(bquote(-log[10](p))) +
+  scale_color_manual(values = c("black", "red")) + 
+  theme_classic() 
+
+# ggsave(paste0("figures/", FP_METHOD, "_tss_distance_vs_significance.png"),
+#        width = 6, height = 4, units = "in")
+```
+
+```{r}
+regression_results %>%
+  filter(fpQTL) %>%
+  ggplot(aes(x = distance_to_nearest_tss_liver_expressed/1000, y = abs(beta))) +
+  geom_point() +
+  xlim(0, 100000/1000) +
+  stat_cor(method = "spearman", label.x.npc = "middle")+
+  xlab("Distance to nearest TSS (kb)") +
+  ylab("Absolute effect size") +
+  theme_classic()
+```
+
+

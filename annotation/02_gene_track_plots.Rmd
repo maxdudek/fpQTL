@@ -1,0 +1,255 @@
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(gridExtra)
+library(locuszoomr)
+library(LDlinkR)
+library(EnsDb.Hsapiens.v86)
+ROOT_DIR <- "/mnt/isilon/sfgi/dudekm/"
+LD_LINK_TOKEN <- "XXXXXXXXXXXX"
+```
+
+
+```{r}
+FP_METHOD <- "PRINT_no_gaussian"
+fpQTLs <- read.delim(paste0("fpQTLs_annotated/", FP_METHOD, "_annotated_fpQTLs.txt"))
+```
+
+```{r}
+regression_results <- readRDS(paste0("../regression/FP_methods/", FP_METHOD, "/regression_results/fp_score_covariates_genotype_regression.Rds"))
+
+regression_results %>%
+  dplyr::filter(ST_qval < 0.05) %>%
+  pull(pval) %>%
+  max() ->
+  ST_FDR5_p_thresh
+
+regression_results <- regression_results %>%
+  dplyr::rename(
+    SNP = variant_id,
+    CHR = variant_chrom,
+    p = pval
+  )
+```
+
+
+Step 1: get sumstats snippets
+```{r}
+# GWAS_DIR <- paste0(ROOT_DIR,
+#                    "raw_data/GWAS/summary_stats_hg38_liftover/munged_for_coloc")
+# BMI <- read.delim(paste0(GWAS_DIR, "/BMI.sumstats"))
+# lipids_LDL <- read.delim(paste0(GWAS_DIR, "/lipids_LDL.sumstats"))
+```
+
+```{r}
+# lipids_LDL %>% saveRDS("sumstats_snippets/lipids_LDL.full.Rds")
+```
+
+```{r}
+# lipids_LDL <- readRDS("sumstats_snippets/lipids_LDL.full.Rds")
+```
+
+```{r}
+# W <- 2e5
+# 
+# # SORT1
+# chrom <- "chr1"
+# pos <- 109274968
+# 
+# 
+# lipids_LDL %>% filter(CHR == chrom) %>%
+#   filter(POS > pos-W, POS < pos+W) %>%
+#   saveRDS("sumstats_snippets/SORT1/lipids_LDL.Rds")
+# 
+# # SLC12A8
+# chrom <- "chr3"
+# pos <- 125207609
+# 
+# lipids_LDL %>% filter(CHR == chrom) %>%
+#   filter(POS > pos-W, POS < pos+W) %>%
+#   saveRDS("sumstats_snippets/SLC12A8/lipids_LDL.Rds")
+# 
+# # ZFPM1
+# chrom <- "chr16"
+# pos <- 88468834
+# 
+# lipids_LDL %>% filter(CHR == chrom) %>%
+#   filter(POS > pos-W, POS < pos+W) %>%
+#   saveRDS("sumstats_snippets/ZFPM1/lipids_LDL.Rds")
+
+```
+
+```{r fig.width=6, fig.height=6}
+plot_locus <- function(fpQTL_locus, GWAS_locus, eQTL_locus, rsID, gene_name) {
+  oldpar <- set_layers(3, heights = c(2,2,2.1,1.5))
+  scatter_plot(fpQTL_locus, xticks = FALSE, labels = c(rsID), label_x = c(4), ylab = bquote(~-log[10](p)),
+               lwd = 0, cex = 1.4, pcutoff = ST_FDR5_p_thresh, scheme = c("grey", "grey", "red"))
+  scatter_plot(GWAS_locus, xticks = FALSE, ylab = bquote(~-log[10](p)), showLD = FALSE, lwd = 0, cex = 1.4) 
+  scatter_plot(eQTL_locus, xticks = FALSE, ylab = bquote(~-log[10](p)),
+               pcutoff = NULL, scheme = c("dodgerblue", "dodgerblue", "red"), showLD = FALSE, lwd = 0, cex = 1.4) 
+  genetracks(GWAS_locus, gene_col = "grey", exon_col = "grey", exon_border = NULL)
+  par(oldpar)
+}
+```
+
+# SORT1 locus
+```{r}
+lipids_LDL_SORT1 <- readRDS("sumstats_snippets/SORT1/lipids_LDL.Rds")
+
+lipids_LDL_SORT1 <- lipids_LDL_SORT1 %>% 
+  dplyr::rename(p = P)
+```
+
+```{r fig.width=8, fig.height=5}
+# w <- 1e5
+# chrom <- "chr1"
+# pos <- 109274968
+# lipid_loc <- locus(data = lipids_LDL_SORT1, seqname = chrom, xrange = c(pos-w, pos+w),
+#              ens_db = "EnsDb.Hsapiens.v86")
+# lipid_loc <- link_LD(lipid_loc, token = LD_LINK_TOKEN, genome_build = "grch38")
+# lipid_loc <- link_eqtl(lipid_loc, token = LD_LINK_TOKEN, genome_build = "grch38")
+# lipid_loc %>% saveRDS("locus_objects/SORT1.lipids_LDL.Rds")
+```
+
+
+```{r fig.width=8, fig.height=5}
+w <- 1e5
+chrom <- "chr1"
+pos <- 109274968
+
+lipid_loc <- readRDS("locus_objects/SORT1.lipids_LDL.Rds")
+fpQTL_locus <- locus(data = regression_results, seqname = chrom, xrange = c(pos-w, pos+w),
+             ens_db = "EnsDb.Hsapiens.v86")
+
+# Make eQTL locus
+# eQTLs <- readRDS(paste0(ROOT_DIR, "raw_data/GTEx/Liver.v8.signif_variant_gene_pairs.hg38.names.Rds"))
+
+# eQTL_SORT1_df <- eQTLs %>%
+#   dplyr::filter(gene_name == "SORT1") %>%
+#   dplyr::rename(CHR = variant_chrom, POS = variant_pos, p = pval_nominal) %>%
+#   inner_join(lipids_LDL_SORT1 %>% dplyr::select(SNP, CHR, POS), join_by(CHR, POS))
+# 
+# eQTL_SORT1_locus <- locus(data = eQTL_SORT1_df, seqname = chrom, xrange = c(pos-w, pos+w),
+#         ens_db = "EnsDb.Hsapiens.v86")
+# eQTL_SORT1_locus <- link_LD(eQTL_SORT1_locus, token = LD_LINK_TOKEN, genome_build = "grch38")
+# eQTL_SORT1_locus %>% saveRDS("locus_objects/SORT1.eQTL.Rds")
+
+eQTL_SORT1_locus <- readRDS("locus_objects/SORT1.eQTL.Rds")
+```
+
+# MANUSCRIPT - Figure 5A
+```{r fig.width=6, fig.height=6}
+png("locus_figures/SORT1.png", width = 6, height = 6, units = "in", res = 600)
+plot_locus(fpQTL_locus, lipid_loc, eQTL_SORT1_locus, rsID = "rs12740374", gene_name = "SORT1")
+dev.off()
+```
+
+
+# ZFPM1 locus
+```{r}
+lipids_LDL_ZFPM1 <- readRDS("sumstats_snippets/ZFPM1/lipids_LDL.Rds")
+
+lipids_LDL_ZFPM1 <- lipids_LDL_ZFPM1 %>% 
+  dplyr::rename(p = P)
+```
+
+```{r fig.width=8, fig.height=5}
+# w <- 1e5
+# chrom <- "chr16"
+# pos <- 88468834
+# lipid_loc <- locus(data = lipids_LDL_ZFPM1, seqname = chrom, xrange = c(pos-w, pos+w),
+#              ens_db = "EnsDb.Hsapiens.v86")
+# lipid_loc <- link_LD(lipid_loc, token = LD_LINK_TOKEN, genome_build = "grch38")
+# lipid_loc <- link_eqtl(lipid_loc, token = LD_LINK_TOKEN, genome_build = "grch38")
+# lipid_loc %>% saveRDS("locus_objects/ZFPM1.lipids_LDL.Rds")
+```
+
+
+```{r fig.width=8, fig.height=5}
+w <- 1e5
+chrom <- "chr16"
+pos <- 88468834
+
+lipid_loc <- readRDS("locus_objects/ZFPM1.lipids_LDL.Rds")
+fpQTL_locus <- locus(data = regression_results, seqname = chrom, xrange = c(pos-w, pos+w),
+             ens_db = "EnsDb.Hsapiens.v86")
+
+# Make eQTL locus
+# eQTLs <- readRDS(paste0(ROOT_DIR, "raw_data/GTEx/Liver.v8.signif_variant_gene_pairs.hg38.names.Rds"))
+# 
+# eQTL_ZFPM1_df <- eQTLs %>%
+#   dplyr::filter(gene_name == "ZFPM1") %>%
+#   dplyr::rename(CHR = variant_chrom, POS = variant_pos, p = pval_nominal) %>%
+#   inner_join(lipids_LDL_ZFPM1 %>% dplyr::select(SNP, CHR, POS), join_by(CHR, POS))
+# 
+# eQTL_ZFPM1_locus <- locus(data = eQTL_ZFPM1_df, seqname = chrom, xrange = c(pos-w, pos+w), 
+#         ens_db = "EnsDb.Hsapiens.v86")
+# eQTL_ZFPM1_locus <- link_LD(eQTL_ZFPM1_locus, token = LD_LINK_TOKEN, genome_build = "grch38")
+# eQTL_ZFPM1_locus %>% saveRDS("locus_objects/ZFPM1.eQTL.Rds")
+
+eQTL_ZFPM1_locus <- readRDS("locus_objects/ZFPM1.eQTL.Rds")
+
+```
+
+# MANUSCRIPT - Figure 5D
+```{r fig.width=6, fig.height=6}
+png("locus_figures/ZFPM1.png", width = 6, height = 6, units = "in", res = 600)
+plot_locus(fpQTL_locus, lipid_loc, eQTL_ZFPM1_locus, rsID = "rs55823018", gene_name = "ZFPM1")
+dev.off()
+```
+
+
+# SLC12A8 locus
+```{r}
+lipids_LDL_SLC12A8 <- readRDS("sumstats_snippets/SLC12A8/lipids_LDL.Rds")
+
+lipids_LDL_SLC12A8 <- lipids_LDL_SLC12A8 %>% 
+  dplyr::rename(p = P)
+```
+
+```{r fig.width=8, fig.height=5}
+# w <- 1e5
+# chrom <- "chr3"
+# pos <- 125207609
+# lipid_loc <- locus(data = lipids_LDL_SLC12A8, seqname = chrom, xrange = c(pos-w, pos+w),
+#              ens_db = "EnsDb.Hsapiens.v86")
+# lipid_loc <- link_LD(lipid_loc, token = LD_LINK_TOKEN, genome_build = "grch38")
+# lipid_loc <- link_eqtl(lipid_loc, token = LD_LINK_TOKEN, genome_build = "grch38")
+# lipid_loc %>% saveRDS("locus_objects/SLC12A8.lipids_LDL.Rds")
+```
+
+
+```{r fig.width=8, fig.height=5}
+w <- 1e5
+chrom <- "chr3"
+pos <- 125207609
+
+lipid_loc <- readRDS("locus_objects/SLC12A8.lipids_LDL.Rds")
+fpQTL_locus <- locus(data = regression_results, seqname = chrom, xrange = c(pos-w, pos+w),
+             ens_db = "EnsDb.Hsapiens.v86")
+
+# Make eQTL locus
+# eQTLs <- readRDS(paste0(ROOT_DIR, "raw_data/GTEx/Liver.v8.signif_variant_gene_pairs.hg38.names.Rds"))
+# 
+# eQTL_SLC12A8_df <- eQTLs %>%
+#   dplyr::filter(gene_name == "SLC12A8") %>%
+#   dplyr::rename(CHR = variant_chrom, POS = variant_pos, p = pval_nominal) %>%
+#   inner_join(lipids_LDL_SLC12A8 %>% dplyr::select(SNP, CHR, POS), join_by(CHR, POS))
+# 
+# eQTL_SLC12A8_locus <- locus(data = eQTL_SLC12A8_df, seqname = chrom, xrange = c(pos-w, pos+w),
+#         ens_db = "EnsDb.Hsapiens.v86")
+# eQTL_SLC12A8_locus <- link_LD(eQTL_SLC12A8_locus, token = LD_LINK_TOKEN, genome_build = "grch38")
+# eQTL_SLC12A8_locus %>% saveRDS("locus_objects/SLC12A8.eQTL.Rds")
+
+eQTL_SLC12A8_locus <- readRDS("locus_objects/SLC12A8.eQTL.Rds")
+```
+
+
+
+
+# MANUSCRIPT - Figure 5E
+```{r fig.width=6, fig.height=6}
+png("locus_figures/SLC12A8.png", width = 6, height = 6, units = "in", res = 600)
+plot_locus(fpQTL_locus, lipid_loc, eQTL_SLC12A8_locus, rsID = "rs11710930", gene_name = "SLC12A8")
+dev.off()
+```
+

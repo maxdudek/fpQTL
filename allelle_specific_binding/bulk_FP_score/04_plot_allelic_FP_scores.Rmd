@@ -1,0 +1,80 @@
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggpubr)
+ROOT_DIR <- "/mnt/isilon/sfgi/dudekm/"
+```
+
+```{r}
+allelic_FP_scores <- read.delim("allelic_FP_scores.txt")
+fpQTLs <- read.delim("../regression/FP_methods/PRINT_no_gaussian/regression_results/fpQTLs_covariates_FDR5.txt")
+
+allelic_FP_scores <- allelic_FP_scores %>% 
+  pivot_wider(names_from = allele, values_from = FP_score, names_prefix = "FP_score_") %>%
+  select(variant_id, FP_score_ref, FP_score_alt) %>%
+  mutate(delta_allelic_fp_score = FP_score_alt - FP_score_ref) %>%
+  right_join(fpQTLs, by = join_by(variant_id == variant_id)) %>%
+  mutate(concordant = sign(beta) == sign(delta_allelic_fp_score))
+```
+
+```{r}
+max(abs(allelic_FP_scores$delta_allelic_fp_score), na.rm = TRUE)
+
+max(abs(allelic_FP_scores$beta))
+```
+
+# MANUSCRIPT - Figure 2D
+```{r fig.width=5, fig.height=5}
+COLORS <- c("#808080", "#5b1e79")
+
+allelic_FP_scores %>%
+  mutate(concordant = sign(beta) == sign(delta_allelic_fp_score)) %>%
+  ggplot(aes(x = beta, y = delta_allelic_fp_score, color = concordant, group = 1)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_point() +
+  annotate("text", label = "183", x = 0.25, y = 0.4, fontface = "plain", color = COLORS[2]) +
+  annotate("text", label = "203", x = 0.25, y = -0.4, fontface = "plain", color = COLORS[1]) +
+  annotate("text", label = "84", x = -0.25, y = 0.4, fontface = "plain", color = COLORS[1]) +
+  annotate("text", label = "209", x = -0.25, y = -0.4, fontface = "plain", color = COLORS[2]) +
+  scale_color_manual(values = COLORS, guide = NULL) +
+  # scale_color_gradient(low = "gold", high = "purple", name = bquote(atop("fpQTL", -log[10](p)))) +
+  xlim(c(-0.365, 0.365))+
+  ylim(c(-0.73, 0.73)) +
+  xlab("Across-sample effect size") +
+  ylab("Within sample allelic \u0394FP score") +
+  theme_classic() +
+  stat_cor(method = "spearman", aes(beta, delta_allelic_fp_score,
+           label = paste(after_stat(r.label), after_stat(p.label), sep = "~`,`~"))) +
+  coord_fixed(0.5)
+ggsave("figures/allelic_cutsite_scatterplot.png", width = 5, height = 5, units = "in")
+```
+
+```{r fig.width=6, fig.height=5}
+allelic_FP_scores %>%
+  filter(pval < 1e-8) %>%
+  ggplot(aes(x = beta, y = delta_allelic_fp_score, color = -log10(pval))) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_point() +
+  scale_color_gradient(low = "gold", high = "purple", name = bquote(-log[10](p))) +
+  xlim(c(-0.365, 0.365))+
+  ylim(c(-0.73, 0.73)) +
+  xlab("Across-sample effect size") +
+  ylab("Within sample allelic \u0394FP score") +
+  theme_classic() +
+  stat_cor(method = "spearman", aes(beta, delta_allelic_fp_score,
+           label = paste(after_stat(r.label), after_stat(p.label), sep = "~`,`~"))) +
+  coord_fixed(0.5)
+```
+
+# Statistical tests
+```{r}
+m <- table(sign(allelic_FP_scores$beta), sign(allelic_FP_scores$delta_allelic_fp_score))[,c(1,3)]
+m
+fisher.test(m)
+
+b <- table(allelic_FP_scores$concordant)
+b
+binom.test(b)
+```
+

@@ -1,0 +1,88 @@
+This script turns lists of fpQTL SNPs into bedfiles, which can be fed into the LDSC pipeline. All fpQTLs come from regression WITH covariates 
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+ROOT_DIR <- "/mnt/isilon/sfgi/dudekm/"
+```
+
+
+```{r}
+
+fpQTLs <- list()
+fpQTLs[["PRINT"]] <- 
+  read.delim("../../regression/FP_methods/PRINT/regression_results/fpQTLs_covariates_FDR5.txt")
+
+fpQTLs[["PRINT_no_gaussian"]] <- 
+  read.delim("../../regression/FP_methods/PRINT_no_gaussian/regression_results/fpQTLs_covariates_FDR5.txt")
+
+
+```
+
+
+# Alternate annotations
+```{r}
+chrom_lengths <- read.table(paste0(ROOT_DIR, "raw_data/genome/human.hg38.genome")) %>%
+  dplyr::rename(variant_chrom = V1, chrom_length = V2)
+```
+
+```{r}
+fpQTLs <- list()
+fpQTLs[["PRINT_no_gaussian"]] <- 
+  read.delim("../../regression/FP_methods/PRINT_no_gaussian/regression_results/fpQTLs_covariates_FDR5.txt")
+
+fpQTLs[["PRINT_no_gaussian_FDR10"]] <- 
+  read.delim("../../regression/FP_methods/PRINT_no_gaussian/regression_results/fpQTLs_covariates_FDR10.txt")
+
+fpQTLs[["PRINT_no_gaussian_cut_telomeric_1Mb"]] <- 
+  read.delim("../../regression/FP_methods/PRINT_no_gaussian/regression_results/fpQTLs_covariates_FDR5.txt") %>%
+      inner_join(chrom_lengths) %>%
+      mutate(telomeric_1Mb = variant_pos < 1e6 | variant_pos > chrom_length - 1e6) %>%
+      filter(!telomeric_1Mb)
+
+fpQTLs[["PRINT_no_gaussian_FDR10_cut_telomeric_1Mb"]] <- 
+  read.delim("../../regression/FP_methods/PRINT_no_gaussian/regression_results/fpQTLs_covariates_FDR10.txt") %>%
+      inner_join(chrom_lengths) %>%
+      mutate(telomeric_1Mb = variant_pos < 1e6 | variant_pos > chrom_length - 1e6) %>%
+      filter(!telomeric_1Mb)
+
+MHC <- c(28510120, 33480577)
+chr17_inv <- c(4.557e7, 4.63e7)
+fpQTLs[["PRINT_no_gaussian_FDR10_cutMHC_cut17inv"]] <- 
+  read.delim("../../regression/FP_methods/PRINT_no_gaussian/regression_results/fpQTLs_covariates_FDR10.txt") %>%
+  filter(!(variant_chrom == "chr6" & variant_pos > MHC[1] & variant_pos < MHC[2])) %>% # Filter variants in MHC
+  filter(!(variant_chrom == "chr17" & variant_pos > chr17_inv[1] & variant_pos < chr17_inv[2])) # Filter variants in chr17 inversion
+  
+```
+
+
+```{r}
+for (annot in names(fpQTLs)) {
+  cat(annot, ": ", nrow(fpQTLs[[annot]]), " fpQTLs\n")
+  dir.create(file.path("annotations", annot), showWarnings = FALSE)
+  
+  fpQTLs[[annot]] %>%
+    rename(
+      chrom = variant_chrom,
+      end = variant_pos
+    ) %>%
+    mutate(start = end - 1) %>%
+    select(chrom, start, end) %>%
+    arrange(chrom, start) %>%
+    write.table(paste0("annotations/", annot, "/", annot, ".bed"), 
+                sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
+}
+```
+
+```{r}
+x <- runif(20)
+y <- runif(20)
+model <- lm(x ~ y)
+
+summary(model)$r.squared
+```
+
+
+
+
+
+

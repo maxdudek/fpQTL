@@ -1,0 +1,159 @@
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+ROOT_DIR <- "/mnt/isilon/sfgi/dudekm/"
+```
+
+Load GWAS proxy SNPs
+```{r}
+R2 <- "0.8"
+
+GWAS_DIR <- paste0(ROOT_DIR, "raw_data/GWAS/sentinel_variants/snipa_LDproxies_r2=", R2, "_1000G_Phase3v5")
+filenames <- list.files(GWAS_DIR, "*.txt", full.names = TRUE)
+proxy <- lapply(filenames, read.delim)
+names(proxy) <- str_match(filenames, ".*/(.*?)_proxy")[,2]
+
+proxy <- lapply(proxy, separate_rows, RSALIAS, sep = ",")
+
+get_proxy_rsIDs <- function(proxy_df) { unique(c(proxy_df$RSID, proxy_df$RSALIAS )) }
+proxy_rsIDs <- lapply(proxy, get_proxy_rsIDs)
+
+proxy_rsIDs %>% lapply(head)
+```
+
+Load 1000G Phase3v5 SNPs (used by SNiPA to get proxys)
+```{r}
+eur_snps <- readRDS(paste0(ROOT_DIR, "raw_data/1000G/rsIDs/grch37-1kgpp3v5-eur-rsIDs.Rds"))
+```
+
+Load dbSNP151 rsID key - fixes some nonstandard rsIDs from Gencove
+```{r}
+dbSNP151_rsKey <- readRDS(paste0(ROOT_DIR, "footprinting/fpQTLs/testing/variant_ids/gencove_vcf_to_dbSNP155_key.Rds"))
+```
+
+
+
+```{r}
+# chrom_lengths <- read.table(paste0(ROOT_DIR, "raw_data/genome/human.hg38.genome")) %>%
+#   dplyr::rename(variant_chrom = V1, chrom_length = V2)
+```
+
+
+# Get 2x2 tables
+```{r}
+FP_METHODS <- c(
+    "PRINT", "PRINT_no_gaussian"
+)
+
+# FP_METHOD <- "PRINT_no_gaussian"
+
+result_df <- data.frame()
+for (FP_METHOD in FP_METHODS) {
+  cat("FP_METHOD = ", FP_METHOD, "\n")
+  DIR <- paste0("../../regression/FP_methods/", FP_METHOD)
+  fpscore_regression <- readRDS(paste0(DIR, "/regression_results/fp_score_genotype_regression.Rds"))
+  fpscore_cov_regression <- readRDS(paste0(DIR, "/regression_results/fp_score_covariates_genotype_regression.Rds"))
+  for (FDR10 in c(FALSE, TRUE)) {
+    for (cut_telomeric_1Mb in c(FALSE)) {
+      
+      FP_METHOD_FULL_NAME <- FP_METHOD
+      if (FDR10) {
+        Q_THRESHOLD <- 0.10
+        FP_METHOD_FULL_NAME <- paste0(FP_METHOD_FULL_NAME, "_FDR10")
+      } else {
+        Q_THRESHOLD <- 0.05
+      }
+      
+      if (cut_telomeric_1Mb) {
+        FP_METHOD_FULL_NAME <- paste0(FP_METHOD_FULL_NAME, "_cut_telomeric_1Mb")
+      }
+      cat("\tFP_METHOD_FULL_NAME = ", FP_METHOD_FULL_NAME, "\n")
+      
+      fpQTL_data <- data.frame(
+        rsID = fpscore_regression$variant_id,
+        variant_chrom = fpscore_regression$variant_chrom,
+        variant_pos = fpscore_regression$variant_pos,
+        fpQTL_no_cov = fpscore_regression$ST_qval < Q_THRESHOLD,
+        fpQTL_with_cov = fpscore_cov_regression$ST_qval < Q_THRESHOLD
+      ) %>%
+        left_join(dbSNP151_rsKey, by = join_by(rsID == original_rsID)) %>% # Get dbSNP rsID, which might differ from original rsID
+        separate(rsID, into = c("rsID", NA), sep = "_", fill = "right") %>% # "rsXXXXXX_2" --> "rsXXXXXX"
+        mutate(rsID.dbSNP = ifelse(is.na(rsID.dbSNP), rsID, rsID.dbSNP)) # ensure rsID.dbSNP is not NA
+      
+      # Filter to only snipa SNPs, (and filter out MHC?)
+      MHC <- c(28510120, 33480577)
+      fpQTL_data <- fpQTL_data %>%
+        filter(rsID %in% eur_snps | rsID.dbSNP %in% eur_snps) #%>%
+        # filter(!(variant_chrom == "chr6" & variant_pos > MHC[1] & variant_pos < MHC[2])) # Filter variants in MHC
+      
+      # Filter out telomeric regions
+      if (cut_telomeric_1Mb) {
+        fpQTL_data <- fpQTL_data %>%
+          inner_join(chrom_lengths) %>%
+          mutate(telomeric_1Mb = variant_pos < 1e6 | variant_pos > chrom_length - 1e6) %>%
+          filter(!telomeric_1Mb)
+      } 
+      
+      cat("\tMaking 2x2 tables for GWAS traits...\n")
+      for (trait in names(proxy_rsIDs)) {
+        cat("\t\tGWAS trait = ", trait, "\n")
+        
+        fpQTL_data %>%
+          mutate(sig_association = rsID %in% proxy_rsIDs[[trait]] | rsID.dbSNP %in% proxy_rsIDs[[trait]]) ->
+          joined_df
+        
+        # Without covariates
+        table2x2 <- table(joined_df$sig_association, joined_df$fpQTL_no_cov)
+        rownames(table2x2) <- c("no sig", "sig association")
+        colnames(table2x2) <- c("non-fpQTL", "fpQTL")
+        ft <- fisher.test(table2x2)
+      
+        df <- data.frame(
+          fp_method = FP_METHOD_FULL_NAME,
+          trait = trait,
+          covariates = FALSE,
+          snps_neither = table2x2[1,1],
+          snps_fpQTL_only = table2x2[1,2],
+          snps_sig_only = table2x2[2,1],
+          snps_sig_and_fpQTL = table2x2[2,2],
+          odds_ratio = ft$estimate,
+          odds_ratio_95_low = ft$conf.int[1],
+          odds_ratio_95_high = ft$conf.int[2],
+          fishers_p = ft$p.value,
+          row.names = NULL
+        )
+        result_df <- rbind(result_df, df)
+      
+        # With covariates
+        table2x2 <- table(joined_df$sig_association, joined_df$fpQTL_with_cov)
+        rownames(table2x2) <- c("no sig", "sig association")
+        colnames(table2x2) <- c("non-fpQTL", "fpQTL")
+        ft <- fisher.test(table2x2)
+      
+        df <- data.frame(
+          fp_method = FP_METHOD_FULL_NAME,
+          trait = trait,
+          covariates = TRUE,
+          snps_neither = table2x2[1,1],
+          snps_fpQTL_only = table2x2[1,2],
+          snps_sig_only = table2x2[2,1],
+          snps_sig_and_fpQTL = table2x2[2,2],
+          odds_ratio = ft$estimate,
+          odds_ratio_95_low = ft$conf.int[1],
+          odds_ratio_95_high = ft$conf.int[2],
+          fishers_p = ft$p.value,
+          row.names = NULL
+        )
+        result_df <- rbind(result_df, df)
+        
+      }
+    }
+  }
+}
+
+cat("Writing results...\n")
+result_df %>%
+  write.table(paste0("tables/tables_2x2_GWAS_proxies_r2=", R2, ".txt"),
+              quote = FALSE, row.names = F, sep = "\t")
+```
+
+

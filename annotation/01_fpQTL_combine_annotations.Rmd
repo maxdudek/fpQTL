@@ -1,0 +1,196 @@
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(GenomicRanges)
+ROOT_DIR <- "/mnt/isilon/sfgi/dudekm/"
+```
+
+In this notebook, I will create a master table of fpQTLs which combines multiple different types of annotations:
+- distance to nearest TSS, name of nearest gene
+- list of associated traits (GWAS)
+- list of associated genes (liver eQTL)
+- list of overlapping ChIP-peaks (liver, HepG2, hepatocyte)
+- list of overlapping concordant motifs
+- liver ADASTRA associations
+
+```{r}
+FP_METHOD <- "PRINT_no_gaussian"
+MOTIF_THRESHOLD <- "p=5e-4"
+```
+
+
+# Load data
+Load fpQTLs
+```{r}
+fpQTLs <- read.delim(paste0("../regression/FP_methods/", FP_METHOD, 
+                            "/regression_results/fpQTLs_covariates_FDR5.txt"))
+
+fpQTL.range <- GRanges(seqnames = fpQTLs$variant_chrom, 
+                         ranges = IRanges(start = fpQTLs$variant_pos, 
+                                          end = fpQTLs$variant_pos))
+```
+
+Load TSS ranges from RefSeq Curated
+```{r}
+refSeqCurated <- read.table(paste0(ROOT_DIR, "raw_data/genome/RefSeq/ncbiRefSeqCurated.txt"))
+
+colnames(refSeqCurated) <- c("bin", "name", "chrom", "strand", "txStart", "txEnd", "cdsStart", "cdsEnd", "exonCount", "exonStarts", "exonEnds", "score", "name2", "cdsStartStat", "cdsEndStat", "exonFrames")
+
+refSeqCurated %>%
+  mutate(
+    tx = ifelse(strand == "+", txStart, txEnd)
+  ) ->
+  refSeqCurated
+
+tss.range <- GRanges(seqnames = refSeqCurated$chrom, 
+                     ranges = IRanges(start = refSeqCurated$tx, 
+                                      end = refSeqCurated$tx,
+                                      names = refSeqCurated$name2))
+```
+
+Load GWAS and eQTL
+```{r}
+R2 <- "0.8"
+
+GWAS_DIR <- paste0(ROOT_DIR, "raw_data/GWAS/sentinel_variants/snipa_LDproxies_r2=", R2, "_1000G_Phase3v5")
+filenames <- list.files(GWAS_DIR, "*.txt", full.names = TRUE)
+proxy <- lapply(filenames, read.delim)
+names(proxy) <- str_match(filenames, ".*/(.*?)_proxy")[,2]
+
+proxy <- lapply(proxy, separate_rows, RSALIAS, sep = ",")
+
+get_proxy_rsIDs <- function(proxy_df) { unique(c(proxy_df$RSID, proxy_df$RSALIAS )) }
+proxy_rsIDs <- lapply(proxy, get_proxy_rsIDs)
+
+liver.eQTLs <- readRDS(paste0(ROOT_DIR, "raw_data/GTEx/Liver.v8.signif_variants.hg38.names.Rds"))
+
+```
+
+Load ChIP peaks
+```{r}
+chip_peaks <- read.delim(paste0(ROOT_DIR, "raw_data/ChIP-seq/tf_clusters_liver_ENCODE/new_hg38/hg38_tf_clusters_liver_labelled.txt"))
+
+chip_peaks_range <- GRanges(seqnames = chip_peaks$chrom, 
+                                   ranges = IRanges(start = chip_peaks$chromStart, 
+                                                    end = chip_peaks$chromEnd))
+```
+
+Load motif concordant fpQTLs
+```{r}
+concordant_fpQTLs <- read.delim(paste0("../motif_analysis/concordant_fpQTLs/", MOTIF_THRESHOLD, 
+                     "/", FP_METHOD, "_concordant_fpQTLs.txt"))
+
+concordant_fpQTLs_sum <- concordant_fpQTLs %>%
+  group_by(variant_id) %>%
+  summarise(
+    concordant_motif_ids = paste(motif_id, collapse = ","),
+    concordant_motif_delta_scores = paste(delta_score, collapse = ",")
+  )
+```
+
+Load ADASTRA
+```{r}
+ADASTRA <- read.delim(paste0(ROOT_DIR, "raw_data/ChIP-seq/ADASTRA/AD_ASTRA_v5.1.3_liver_HepG2_hepatocytes.tsv"))
+
+ADASTRA <- ADASTRA %>%
+  dplyr::select(rsID, TF.ASBs) %>%
+  dplyr::rename(
+    variant_id = rsID,
+    ADASTRA_TFs = TF.ASBs
+  )
+```
+
+
+# TSS annotation
+```{r}
+result <- distanceToNearest(fpQTL.range, tss.range)
+nearest_index <- subjectHits(result)
+fpQTLs$nearest_tss <- refSeqCurated$name2[nearest_index]
+fpQTLs$distance_to_nearest_tss <- mcols(result)$distance
+fpQTLs$signed_tss_distance <- ifelse(
+  refSeqCurated$strand[nearest_index] == "+",
+  fpQTLs$variant_pos - refSeqCurated$tx[nearest_index],
+  refSeqCurated$tx[nearest_index] - fpQTLs$variant_pos
+) 
+fpQTLs$signed_tss_distance <- fpQTLs$signed_tss_distance - sign(fpQTLs$signed_tss_distance)
+```
+
+# GWAS annotation
+```{r}
+fpQTL_association <- data.frame()
+for (trait in names(proxy_rsIDs)) {
+  print(trait)
+  proxy_fpQTL_rsIDs <- fpQTLs %>%
+    filter(variant_id %in% proxy_rsIDs[[trait]]) %>%
+    pull(variant_id)
+  
+  if (length(proxy_fpQTL_rsIDs) == 0) {next}
+  
+  trait_association <- data.frame(
+    variant_id = proxy_fpQTL_rsIDs,
+    associated_trait = trait
+  )
+  
+  fpQTL_association <- rbind(fpQTL_association, trait_association)
+}
+
+fpQTL_association %>%
+  group_by(variant_id) %>%
+  summarize(associated_traits = paste(associated_trait, collapse = ",")) ->
+  fpQTL_association
+
+fpQTLs <- fpQTLs %>%
+  left_join(fpQTL_association, by = join_by(variant_id))
+```
+
+
+# eQTL annotation
+```{r}
+fpQTLs <- fpQTLs %>%
+  left_join(liver.eQTLs, by = join_by(variant_chrom, variant_pos))
+```
+
+# ChIP-seq annotation
+```{r}
+overlaps <- GenomicRanges::findOverlaps(fpQTL.range, chip_peaks_range, select = "all")
+  
+data.frame(overlaps) %>%
+  mutate(tf_name = chip_peaks$name[subjectHits]) %>%
+  group_by(queryHits) %>%
+  summarize(tf_names = paste(unique(tf_name), collapse = ",")) ->
+  overlaps
+
+fpQTLs$liver_TF_ChIP <- NA
+fpQTLs$liver_TF_ChIP[overlaps$queryHits] <- overlaps$tf_names
+```
+
+# Concordant motif annotation
+```{r}
+fpQTLs <- fpQTLs %>%
+  left_join(concordant_fpQTLs_sum, by = join_by(variant_id))
+```
+
+# ADASTRA annotation
+```{r}
+fpQTLs <- fpQTLs %>% 
+  left_join(ADASTRA, by = join_by(variant_id))
+```
+
+
+```{r}
+fpQTLs %>%
+  write.table(paste0("fpQTLs_annotated/", FP_METHOD, "_annotated_fpQTLs.txt"),
+              quote = FALSE, row.names = FALSE, sep = "\t")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+

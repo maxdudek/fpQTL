@@ -1,0 +1,65 @@
+```{r setup message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggpubr)
+```
+
+```{r}
+FP_methods <- list.dirs("FP_methods", full.names = FALSE, recursive = FALSE)
+
+regression_results.filenames <- paste0("FP_methods/", FP_methods,
+                            "/regression_results/fp_score_covariates_genotype_regression.Rds")
+
+regression_results <- lapply(regression_results.filenames, readRDS)
+names(regression_results) <- FP_methods
+
+cat(FP_methods, sep = " ")
+```
+
+```{r fig.width=5, fig.height=5}
+plot_p_correlation <- function(x, y) {
+  
+  regression_results[[x]] %>%
+    filter(ST_qval < 0.05) %>%
+    pull(pval) %>%
+    max() ->
+    FDR5.x
+  
+  regression_results[[y]] %>%
+    filter(ST_qval < 0.05) %>%
+    pull(pval) %>%
+    max() ->
+    FDR5.y
+  
+  regression_results[[x]] %>%
+    select(variant_id, pval, beta) %>%
+    inner_join(
+      regression_results[[y]] %>% 
+        select(variant_id, pval, beta), 
+      by = join_by(variant_id)
+    ) %>%
+    ggplot(aes(x = -log10(pval.x), y = -log10(pval.y))) +
+    geom_vline(xintercept = -log10(FDR5.x), color = "red", linewidth = 0.5, linetype = "dotted") +
+    geom_hline(yintercept = -log10(FDR5.y), color = "red", linewidth = 0.5, linetype = "dotted") +
+    geom_point(data = . %>% filter(pval.x < 0.01 | pval.y < 0.01), size = 1) +
+    geom_abline(slope = 1, intercept = 0, color = "blue", linewidth = 0.5) +
+    xlab(paste0(x, " log10(pval)")) + 
+    ylab(paste0(y, " log10(pval)")) +
+    stat_cor(aes(label = after_stat(r.label)), method = "spearman", 
+             r.accuracy = 0.01, cor.coef.name = "rho") +
+    theme_classic() ->
+    plot
+  
+  ggsave(paste0("figures/FP_methods_comparison/", x, "_vs_", y, "_pval.png"),
+         plot = plot, width = 7, height = 7, units = "in")
+  
+  # return(plot)
+}
+
+```
+
+```{r}
+plot_p_correlation("PRINT", "PRINT_no_gaussian")
+```
+
+
+

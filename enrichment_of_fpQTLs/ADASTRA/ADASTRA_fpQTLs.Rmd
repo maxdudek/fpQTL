@@ -1,0 +1,75 @@
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+ROOT_DIR <- "/mnt/isilon/sfgi/dudekm"
+```
+
+```{r}
+FP_METHOD <- "PRINT"
+DIR <- paste0("../../regression/FP_methods/", FP_METHOD)
+```
+
+```{r}
+  fpscore_regression <- readRDS(paste0(DIR, "/regression_results/fp_score_genotype_regression.Rds"))
+fpscore_cov_regression <- readRDS(paste0(DIR, "/regression_results/fp_score_covariates_genotype_regression.Rds"))
+variant_info <- readRDS(paste0(DIR, "/data/variant_info_regression.Rds"))
+
+Q_THRESHOLD <- 0.05
+
+fpQTL_data <- data.frame(
+  rsID = fpscore_regression$variant_id,
+  variant_chrom = fpscore_regression$variant_chrom,
+  variant_pos = fpscore_regression$variant_pos,
+  beta.fpQTL_no_cov = fpscore_regression$beta,
+  beta.fpQTL_with_cov = fpscore_cov_regression$beta,
+  fpQTL_no_cov = fpscore_regression$ST_qval < Q_THRESHOLD,
+  fpQTL_with_cov = fpscore_cov_regression$ST_qval < Q_THRESHOLD,
+  ref_allele.fpQTL = variant_info$ref_allele,
+  alt_allele.fpQTL = variant_info$alt_allele
+)
+
+fpQTL_data %>%
+  filter(fpQTL_with_cov) %>%
+  pull(rsID) %>%
+  write(paste0("rsIDs/", FP_METHOD, "fpQTLs_with_cov_rsIDs.txt"))
+
+
+
+```
+
+Create rsID files
+```{r}
+FP_METHODS <- c(
+    "PRINT", "PRINT_no_gaussian"
+)
+
+for (FP_METHOD in FP_METHODS) {
+  print(FP_METHOD)
+  DIR <- paste0("../../regression/FP_methods/", FP_METHOD)
+  fpscore_cov_regression <- readRDS(paste0(DIR, "/regression_results/fp_score_covariates_genotype_regression.Rds"))
+
+  Q_THRESHOLD <- 0.05
+  
+  fpscore_cov_regression %>%
+    filter(ST_qval < Q_THRESHOLD) %>%
+    pull(variant_id) %>%
+    write(paste0("rsIDs/", FP_METHOD, "_fpQTLs_with_cov_rsIDs.txt"))
+}
+```
+
+
+```{r}
+ADASTRA <- read.delim(paste0(ROOT_DIR, "/raw_data/ChIP-seq/ADASTRA/AD_ASTRA_v5.1.3_liver_HepG2_hepatocytes.tsv"))
+
+ADASTRA %>%
+  dplyr::rename(ref_allele = Ref, alt_allele = Alt) %>%
+  mutate()
+```
+
+```{r}
+fpQTL_data %>%
+  left_join()
+```
+
+
+
+
