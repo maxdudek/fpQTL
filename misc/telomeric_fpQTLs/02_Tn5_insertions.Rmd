@@ -270,7 +270,7 @@ df %>%
 ggsave("figures/Tn5_insertion_sd_boxplots.png", width = 10, height = 5, units = "in")
 ```
 
-```{r fig.width=6, fig.height=5}
+```{r fig.width=4.8, fig.height=4}
 COLORS <- c("grey", "#78d158")
 regression_results_telomeric %>%
   ggplot(aes(x = fpQTL_, y = mean_insertion, fill = telomeric_2Mb_, alpha = fpQTL_)) +
@@ -281,7 +281,7 @@ regression_results_telomeric %>%
   ylab("Mean local Tn5 insertion")+
   xlab(NULL) +
   theme_classic()
-ggsave("figures/Tn5_insertion_mean_boxplots_2Mb.png", width = 6, height = 5, units = "in")
+ggsave("figures/Tn5_insertion_mean_boxplots_2Mb.png", width = 4.8, height = 4, units = "in")
 ```
 
 
@@ -569,8 +569,4 @@ sample1_bins_summary %>%
   ggsave(paste0("figures/scatterplot_test.png"), 
          width = 6, height = 6, units = "in")
 ```
-
-
-
-
 

@@ -40,7 +40,7 @@ chip_tables2x2 %>%
 ```
 
 # MANUSCRIPT - Figure 3A
-```{r fig.width=4, fig.height=5}
+```{r fig.width=3, fig.height=3.75}
 liver_TFs <- c("SOX6", "FOXA1", "FOXA2", "JUND", "HNF4A", "HNF4G")
 df <- chip_tables2x2 %>%
   filter(fp_method == "PRINT_no_gaussian" & covariates == TRUE) %>%
@@ -51,14 +51,14 @@ df <- chip_tables2x2 %>%
 df %>%
   ggplot(aes(x = expected_snps_chip_and_fpQTL, y = snps_chip_and_fpQTL, 
              color = liver_TF, shape = liver_TF)) +
-  geom_point(size = 3) +
+  geom_point(size = 2.5) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey") +
   geom_label_repel(
     # data = df %>% filter(liver_TF),
     aes(label = label),
     force = 50,
     min.segment.length = 0,
-    max.overlaps = 60,
+    max.overlaps = 100,
     seed = 26743,
     segment.color = 'grey50') +
   scale_color_manual(values = c("black", "red"), guide = "none") +
@@ -66,7 +66,7 @@ df %>%
   xlab("Expected number of fpQTLs") +
   ylab("Observed number of fpQTLs") +
   theme_classic() 
-ggsave("figures/chip_observed_vs_expected.png", width = 4, height = 5, units = "in", dpi = 300)
+ggsave("figures/chip_observed_vs_expected.png", width = 3, height = 3.75, units = "in", dpi = 300)
 ```
 
 

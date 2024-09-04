@@ -20,7 +20,11 @@ fpscore_regression <- readRDS(paste0(DIR, "/regression_results/fp_score_genotype
 fpscore_cov_regression <- readRDS(paste0(DIR, "/regression_results/fp_score_covariates_genotype_regression.Rds"))
 variant_info <- readRDS(paste0(DIR, "/data/variant_info_regression.Rds"))
 
-Q_THRESHOLD <- 0.05
+if (grepl("local_cutsites_geq10", FP_METHOD, fixed = TRUE)) {
+  Q_THRESHOLD <- 0.10
+} else {
+  Q_THRESHOLD <- 0.05
+}
 
 fpscore_cov_regression %>%
   filter(ST_qval < Q_THRESHOLD) %>%
@@ -40,7 +44,7 @@ fpQTL_data <- data.frame(
   alt_allele.fpQTL = variant_info$alt_allele,
   p_with_cov = fpscore_cov_regression$pval
 ) %>%
-  separate(rsID, into = c("rsID", NA), sep = "_") # "rsXXXXXX_2" --> "rsXXXXXX"
+  separate(rsID, into = c("rsID", NA), sep = "_", fill = "right") # "rsXXXXXX_2" --> "rsXXXXXX"
 ```
 
 ```{r}
@@ -63,17 +67,13 @@ eqtl_all_vars <- readRDS(paste0(ROOT_DIR, "/PMACS/bulk_human_liver_footprints/fu
 eQTL
 ```{r}
 eQTL_fpQTL_joined <- eqtl_all_vars %>%
-  select(variant_id, variant_chrom, variant_pos, ref_allele.eQTL, alt_allele.eQTL, slope, eQTL) %>%
+  dplyr::rename(ref_allele.eQTL = ref_allele, alt_allele.eQTL = alt_allele) %>%
+  select(variant_chrom, variant_pos, ref_allele.eQTL, alt_allele.eQTL, slope, eQTL) %>%
   inner_join(fpQTL_data, by = join_by(variant_chrom, variant_pos))
 
-eqtl_all_vars %>%
-  count(variant_id %in% gtex_all_vars_table$variant_id)
+# eqtl_all_vars %>%
+#   count(variant_id %in% gtex_all_vars_table$variant_id)
 
-  
-
-eQTL_fpQTL_joined %>%
-  filter()
-  count(fpQTL_with_cov, eQTL)
 ```
 
 
@@ -111,7 +111,7 @@ eQTL_fpQTL_joined %>%
   theme_classic()
 ```
 
-```{r fig.width=5, fig.height=5.1}
+```{r fig.width=4, fig.height=4.1}
 eQTL_fpQTL_joined %>%
   filter(fpQTL_with_cov) %>%
   ggplot(aes(x = beta.fpQTL_with_cov, y = eQTL_slope_corrected, color = eQTL)) +
@@ -130,7 +130,7 @@ eQTL_fpQTL_joined %>%
   theme_classic() +
   ylim(c(-1.7, 1.7)) +
   theme(legend.position = "top")
-ggsave("figures/eQTL-fpQTL_direction.png", width = 5, height = 5.1, units = "in", dpi = 300)
+ggsave("figures/eQTL-fpQTL_direction.png", width = 4, height = 4.1, units = "in", dpi = 300)
 
 eQTL_fpQTL_joined %>%
   filter(fpQTL_with_cov, eQTL) %>%
@@ -198,7 +198,7 @@ caQTL_fpQTL_joined <- fpQTLs_caQTL_annotated %>%
 #   theme_classic()
 ```
 
-```{r fig.width=5, fig.height=5.1}
+```{r fig.width=4, fig.height=4.1}
 caQTL_fpQTL_joined %>%
   filter(fpQTL_with_cov) %>%
   ggplot(aes(x = beta.fpQTL_with_cov, y = caQTL_effect_size, color = caQTL)) +
@@ -218,7 +218,7 @@ caQTL_fpQTL_joined %>%
   ylim(c(0, 1)) +
   theme_classic()+
   theme(legend.position = "top")
-ggsave("figures/caQTL-fpQTL_direction.png", width = 5, height = 5.1, units = "in", dpi = 300)
+ggsave("figures/caQTL-fpQTL_direction.png", width = 4, height = 4.1, units = "in", dpi = 300)
 
 caQTL_fpQTL_joined %>%
   arrange(-beta.fpQTL_with_cov)
@@ -244,8 +244,20 @@ eQTL_SNPs <- eqtl_sig_pairs %>%
   pull(variant_location)
 ```
 
+```{r fig.width=4, fig.height=4}
+ggplot() + 
+  stat_qq(aes(sample = -log10(fpscore_cov_regression$pval)), 
+          color = "black", distribution = stats::qexp, dparams = list(rate = log(10))) + 
+  geom_abline(aes(slope = 1, intercept = 0), linetype = 2) +
+  ylab(bquote(Observed ~~ -log[10](p))) +
+  xlab(bquote(Expected ~~ -log[10](p))) +
+  theme_classic()
+ggsave("figures/QQ.png", width = 4, height = 4, dpi = 300)
+```
 
-```{r fig.width=5, fig.height=5}
+
+
+```{r fig.width=4, fig.height=4}
 df <- fpQTL_data %>%
   mutate(variant_location = sprintf("%s:%d", variant_chrom, variant_pos)) %>%
   filter(variant_location %in% GTEx_tested_SNPs) %>%
@@ -270,11 +282,11 @@ ggplot() +
   ylab(bquote(Observed ~~ -log[10](p))) +
   xlab(bquote(Expected ~~ -log[10](p))) +
   theme_classic()
-ggsave("figures/eQTL_QQ.png", width = 5, height = 5, units = "in", dpi = 300)
+ggsave("figures/eQTL_QQ.png", width = 4, height = 4, units = "in", dpi = 300)
 ```
 
 
-```{r fig.width=5, fig.height=5}
+```{r fig.width=4, fig.height=4}
 caQTL_p <- all_variants_caQTL %>%
   # sample_frac(0.1) %>%
   filter(caQTL) %>%
@@ -294,7 +306,7 @@ ggplot() +
   ylab(bquote(Observed ~~ -log[10](p))) +
   xlab(bquote(Expected ~~ -log[10](p))) +
   theme_classic()
-ggsave("figures/caQTL_QQ.png", width = 5, height = 5, units = "in", dpi = 300)
+ggsave("figures/caQTL_QQ.png", width = 4, height = 4, units = "in", dpi = 300)
 ```
 
 # Manhattan plots 
@@ -437,6 +449,3 @@ eQTL_signif_variant_gene_pairs_sum %>%
             )
 dev.off()
 ```
-
-
- 

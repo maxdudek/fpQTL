@@ -83,7 +83,7 @@ distance_summary <- regression_results %>%
 ```
 
 # MANUSCRIPT - Figure 2B
-```{r fig.width=4, fig.height=4}
+```{r fig.width=3, fig.height=3}
 distance_summary %>%
   ggplot(aes(x = distance_bin)) +
   geom_pointrange(aes(y = 100*prop_fpQTLs, 
@@ -98,7 +98,7 @@ distance_summary %>%
                               "25-50 kb", "50-100 kb", ">100 kb")) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1))
-ggsave("figures/tss_distance_vs_fpQTL_proportion.png", width = 4, height = 4, units = "in", dpi = 600)
+ggsave("figures/tss_distance_vs_fpQTL_proportion.png", width = 3, height = 3, units = "in", dpi = 600)
 ```
 
 
@@ -153,19 +153,19 @@ fisher.test(m)
 
 # MANUSCRIPT - Figure 2C
 Do fpQTLs in promoters have larger effect sizes than other fpQTLs?
-```{r fig.width=4, fig.height=4}
+```{r fig.width=3, fig.height=3}
 regression_results %>%
   filter(fpQTL) %>%
   ggplot(aes(x = promoter, y = abs(beta))) +
   geom_boxplot(aes(fill = promoter), outlier.shape = NA) +
-  geom_quasirandom(size = 1, width = 0.4) +
+  geom_quasirandom(size = 0.6, width = 0.4) +
   xlab("fpQTL type") +
   scale_x_discrete(labels = c("distal (> 1 kb)", "promoter")) +
   ylab("Absolute effect size") +
   scale_fill_manual(guide = "none", values = c("#3b528b", "orange")) +
-  stat_compare_means(label.x = 1.5) +
+  stat_compare_means(aes(label = paste0("Wilcoxon,\np = ", after_stat(p.format))), label.x = 1.5, label.y=0.25) +
   theme_classic()
-ggsave("figures/promoter_vs_distal_effect_size.png", width = 4, height = 4, units = "in", dpi = 600)
+ggsave("figures/promoter_vs_distal_effect_size.png", width = 3, height = 3, units = "in", dpi = 600)
 ```
 
 ```{r}
@@ -177,13 +177,13 @@ wilcox.test(effect_size.promoter, effect_size.distal)
 
 
 For fpQTLs, is there a relationship between effect size and distance?
-```{r}
+```{r fig.width=3.75, fig.height=3}
 regression_results %>%
   filter(fpQTL) %>%
   ggplot(aes(x = distance_to_nearest_tss/1000, y = abs(beta))) +
-  geom_point() +
+  geom_point(size = 1.2) +
   xlim(0, 100000/1000) +
-  stat_cor(method = "spearman", label.x.npc = "middle")+
+  stat_cor(method = "spearman", label.x = 25)+
   xlab("Distance to nearest TSS (kb)") +
   ylab("Absolute effect size") +
   theme_classic()

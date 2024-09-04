@@ -32,13 +32,13 @@ brandon_peaks <- read.table(paste0(ROOT_DIR, "raw_data/brandon_liver_ATAC/peak_i
 
 # The Manhattan plot
 # MANUSCRIPT - Figure 2A
-```{r fig.width=10, fig.height=5}
-png(file="figures/manhattan_plot.png", width = 1200, height = 600)
+```{r fig.width=12, fig.height=6}
+png(file="figures/manhattan_plot.png", width = 13, height = 6.5, units = "in", res = 600)
 fpscore_cov_regression %>%
   mutate(variant_chrom = as.integer(gsub("chr", "", variant_chrom))) %>%
   manhattan(chr = "variant_chrom", bp = "variant_pos", 
             snp = "variant_id", p = "pval",
-            col = c("#dd960f", "#526cb0"),
+            col = c("#dd960f", "#526cb0"), cex = 0.8, cex.axis = 0.9,
             suggestiveline = FALSE,
             genomewideline = -log10(ST_FDR5_p_thresh_with_cov))
 dev.off()

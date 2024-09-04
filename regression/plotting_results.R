@@ -218,14 +218,14 @@ ggsave(paste0(DIR, "/figures/regression_results_no_covariates/volcano_plot.png")
 
 fpscore_cov_regression %>%
   ggplot(aes(x = beta, y = -log10(pval))) +
-  geom_point(size = 1) +
+  geom_point(size = 0.6) +
   geom_abline(slope = 0, intercept = -log10(ST_FDR5_p_thresh_with_cov), size = 0.3, color = "black") +
   xlim(volcano_plot_xlim) +
   ylab(bquote(-log[10](p))) +
   xlab("Effect slope (beta)") +
   theme_classic()
 
-ggsave(paste0(DIR, "/figures/regression_results_with_covariates/volcano_plot.png"))
+ggsave(paste0(DIR, "/figures/regression_results_with_covariates/volcano_plot.png"), width = 3, height = 3, dpi = 600)
 
 cat("Plotting Manhattan plots...\n")
 # Manhatten plot
@@ -257,11 +257,14 @@ data.frame(
   ggplot(aes(x = pval_no_cov, y = pval_with_cov)) +
   geom_point(size = 0.5) +
   geom_abline(slope = 1, intercept = 0, color = "blue") +
-  stat_cor(aes(label = paste(after_stat(rr.label), ..p.label.., sep = "~`,`~")),) +
+  stat_cor(
+    aes(label = paste(after_stat(rr.label), ..p.label.., sep = "~`,`~")),
+    size = 3
+  ) +
   xlab("-log10 p-value without covariates") +
   ylab("-log10 p-value WITH covariates") +
   theme_classic()
-ggsave(paste0(DIR, "/figures/regression_pvals_with_vs_without_covariates.png"))
+ggsave(paste0(DIR, "/figures/regression_pvals_with_vs_without_covariates.png"), width = 3, height = 3, dpi = 300)
 
 cat("Correlation between pvals with and without covariates...\n")
 cor.test(-log10(fpscore_regression$pval), -log10(fpscore_cov_regression$pval),

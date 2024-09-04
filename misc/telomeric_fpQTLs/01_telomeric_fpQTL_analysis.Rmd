@@ -129,7 +129,6 @@ table(fpQTLs_telomeric$telomeric_5Mb)
 fpQTLs_telomeric %>% filter(telomeric_1Mb)
 ```
 
-
 # Distance to nearest CTCF peak (TAD boundaries)
 ```{r}
 chip_seq_peaks <- read.delim(paste0(ROOT_DIR, "raw_data/ChIP-seq/tf_clusters_liver_ENCODE/new_hg38/hg38_tf_clusters_liver_labelled.txt"))
@@ -361,6 +360,3 @@ fpQTLs_telomeric %>%
   filter(variant_chrom == "chr2") %>%
   arrange(variant_pos)
 ```
-
-
-
