@@ -1,10 +1,11 @@
 # Liver fpQTL Discovery
 
-This repository contains scripts used in the manuscript  "Characterization of non-coding variants associated with transcription factor binding through ATAC-seq-defined footprint QTLs in liver" (`TODO - DOI link`). 
+This repository contains scripts used in the manuscript: \
+[Characterization of non-coding variants associated with transcription factor binding through ATAC-seq-defined footprint QTLs in liver](https://doi.org/10.1101/2024.09.24.614730) (Preprint) 
 
-[TODO - raw data availibility]
+Raw data files will be freely availible online pending publication.
 
-All raw and intermediate data files are availible on request. Any questions can be sent to maxdudek@gmail.com.
+Currently, all raw and intermediate data files are availible on reasonable request. Any questions can be sent to maxdudek@gmail.com.
 
 ## Directories
 
